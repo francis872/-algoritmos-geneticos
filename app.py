@@ -65,15 +65,39 @@ def render_generation_animation(history_path: Path, metric_name: str, title: str
 
     if st.button(f"Reproducir evolución {title}", key=f"animate_{metric_name}"):
         animation_slot = st.empty()
+        progress_slot = st.empty()
+        caption_slot = st.empty()
+        animation_delay = st.session_state.get("animation_delay", 0.18)
         for step in range(1, max_generation + 1):
             partial = history.iloc[:step]
             animation_slot.line_chart(partial[["best_fitness", "average_fitness"]], use_container_width=True)
-            animation_slot.progress(step / max_generation)
-            animation_slot.caption(f"Evolución {step}/{max_generation}")
-            time.sleep(0.18)
+            progress_slot.progress(step / max_generation)
+            caption_slot.caption(
+                f"Generación {step}/{max_generation} · fitness actual: {partial['best_fitness'].iloc[-1]:.4f}"
+            )
+            time.sleep(animation_delay)
 
 
 st.set_page_config(page_title="GA SDSS Dashboard", page_icon="🚀", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    .hero {
+        padding: 1.4rem 1.6rem;
+        border: 1px solid rgba(36, 64, 83, .18);
+        border-radius: 14px;
+        background: linear-gradient(120deg, #f4f8f5 0%, #e7f0ed 55%, #f9efe1 100%);
+        margin-bottom: 1rem;
+    }
+    .hero-kicker { color: #b45f32; font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .hero-title { color: #183247; font-size: clamp(1.7rem, 4vw, 2.8rem); font-weight: 800; line-height: 1.05; margin: .35rem 0; }
+    .hero-copy { color: #49616c; margin: 0; }
+    div[data-testid="stMetric"] { background: #ffffff; border: 1px solid #d8e2df; border-radius: 10px; padding: .7rem .85rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 if "run_pipeline" not in st.session_state:
     st.session_state.run_pipeline = False
@@ -138,6 +162,8 @@ with st.sidebar:
     population_size = st.slider("Tamaño de población", 10, 120, POPULATION_SIZE, 5)
     mutation_rate = st.slider("Tasa de mutación", 0.01, 0.4, MUTATION_RATE, 0.01)
     generations = st.slider("Número de generaciones", 10, 150, GENERATIONS, 10)
+    animation_delay = st.slider("Velocidad de animación", 0.03, 0.5, 0.18, 0.01)
+    st.session_state.animation_delay = animation_delay
 
     st.markdown("---")
     if st.button("Ejecutar pipeline completo", type="primary", key="run_full_pipeline"):
@@ -147,13 +173,31 @@ with st.sidebar:
         st.session_state.generations = generations
 
 
+st.markdown(
+    """
+    <div class="hero">
+        <div class="hero-kicker">Laboratorio evolutivo · SDSS</div>
+        <div class="hero-title">Algoritmos genéticos para datos astronómicos</div>
+        <p class="hero-copy">Configura el experimento, observa cómo evoluciona el fitness y compara las soluciones encontradas.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 df = load_data()
 summary = get_summary(df)
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Filas", summary["rows"])
 col2.metric("Columnas", summary["columns"])
 col3.metric("Clases", len(summary["class_counts"]))
+col4.metric("Estado", "Listo" if not st.session_state.run_pipeline else "Ejecutando")
+
+st.caption(
+    f"Experimento actual · población {st.session_state.get('population_size', POPULATION_SIZE)} · "
+    f"mutación {st.session_state.get('mutation_rate', MUTATION_RATE):.2f} · "
+    f"{st.session_state.get('generations', GENERATIONS)} generaciones"
+)
 
 st.subheader("Distribución de clases")
 st.dataframe(pd.DataFrame(summary["class_counts"].items(), columns=["Clase", "Cantidad"]))
