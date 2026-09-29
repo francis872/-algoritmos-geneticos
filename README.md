@@ -1,27 +1,59 @@
 # ACO + SSA + RBF + MongoDB
 
-Proyecto académico construido y validado para la actividad de optimización bioinspirada.
+Proyecto academico de biooptimizacion integrado con MongoDB.
 
-## Contenido
-- ACO para TSP.
-- SSA para Rastrigin.
-- RBF base.
-- SSA-RBF para optimizar M, sigma y lambda.
-- MongoDB para registrar corridas.
-- 10 semillas configuradas para el experimento principal.
-- 5 pruebas automáticas.
-- Notebook de análisis.
-- docker-compose para MongoDB.
+## Despliegue de la capa de datos en MongoDB local
 
-El archivo `biooptimization_project.zip` contiene el proyecto completo validado.
+MongoDB almacena las corridas; el codigo Python se ejecuta como aplicacion cliente.
 
-Validación realizada:
-- 5/5 pruebas aprobadas.
-- ACO ejecuta correctamente.
-- SSA ejecuta correctamente.
-- RBF vs SSA-RBF ejecuta correctamente en modo rápido.
+1. Instala dependencias:
 
-MongoDB esperado:
-`mongodb://localhost:27017`
-Base: `biooptimization`
-Colección: `runs`
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env
+```
+
+2. Verifica MongoDB:
+
+```powershell
+Get-Service MongoDB
+Start-Service MongoDB
+mongosh "mongodb://localhost:27017"
+```
+
+3. Inicializa la base y los indices:
+
+```powershell
+python scripts/init_mongodb.py --seed-sample
+```
+
+Se usa:
+- URI: `mongodb://localhost:27017`
+- Base: `biooptimization`
+- Coleccion: `runs`
+
+4. Ejecuta una prueba real:
+
+```powershell
+python scripts/run_rbf_experiments.py --quick
+```
+
+5. Ejecuta las 10 semillas:
+
+```powershell
+python scripts/run_rbf_experiments.py
+```
+
+## Verificacion en mongosh
+
+```javascript
+use biooptimization
+show collections
+db.runs.find().sort({created_at: -1}).limit(5)
+db.runs.countDocuments()
+db.runs.find({algorithm: "ssa_rbf"}).sort({"metrics.rmse": 1}).limit(1)
+```
+
+La rama incluye el inicializador `scripts/init_mongodb.py` y una capa Mongo con indices para algoritmo/fecha, experimento/semilla/algoritmo y RMSE.
