@@ -13,6 +13,14 @@ from src.feature_selection.ga import run_feature_selection_ga
 from src.hyperparameters.ga import run_hyperparameter_ga
 from src.clustering.ga import run_clustering_ga
 
+try:
+    from src.database.mongodb import MongoRunStore
+    mongo_store = MongoRunStore()
+    mongo_store.ping()
+except Exception:
+    mongo_store = None
+
+
 
 DATASET_PATH = Path(__file__).resolve().parent / "data" / "sdss_sample.csv"
 OUTPUTS_DIR = Path(__file__).resolve().parent / "outputs"
@@ -116,6 +124,7 @@ def execute_pipeline(df: pd.DataFrame):
     generations = st.session_state.get("generations", GENERATIONS)
 
     with st.spinner("Ejecutando algoritmo de selección de características..."):
+        t0 = time.time()
         st.session_state.feature_metrics = run_feature_selection_ga(
             df,
             output_dir=OUTPUTS_DIR / "feature_selection",
@@ -123,9 +132,37 @@ def execute_pipeline(df: pd.DataFrame):
             mutation_rate=mutation_rate,
             generations=generations,
         )
+        t_feat = time.time() - t0
+        if mongo_store:
+            try:
+                conv_path = OUTPUTS_DIR / "feature_selection" / "convergence.csv"
+                conv = pd.read_csv(conv_path)["best_fitness"].tolist() if conv_path.exists() else []
+                mongo_store.log_genetic_run(
+                    algorithm="genetic_feature_selection",
+                    problem="astronomy_classification",
+                    dataset="sdss_sample.csv",
+                    seed=42,
+                    params={
+                        "population_size": population_size,
+                        "generations": generations,
+                        "mutation_rate": mutation_rate,
+                        "best_features": st.session_state.feature_metrics.get("best_features"),
+                    },
+                    metrics={
+                        "accuracy": st.session_state.feature_metrics.get("accuracy"),
+                        "rmse": 1.0 - float(st.session_state.feature_metrics.get("accuracy", 0.0)),
+                    },
+                    evaluations=population_size * generations,
+                    convergence=conv,
+                    time_s=t_feat,
+                    experiment_id="streamlit_dashboard_run",
+                )
+            except Exception:
+                pass
     st.success("Selección de características finalizada.")
 
     with st.spinner("Ejecutando optimización de hiperparámetros..."):
+        t0 = time.time()
         st.session_state.hp_metrics = run_hyperparameter_ga(
             df,
             output_dir=OUTPUTS_DIR / "hyperparameters",
@@ -133,9 +170,39 @@ def execute_pipeline(df: pd.DataFrame):
             mutation_rate=mutation_rate,
             generations=generations,
         )
+        t_hp = time.time() - t0
+        if mongo_store:
+            try:
+                conv_path = OUTPUTS_DIR / "hyperparameters" / "convergence.csv"
+                conv = pd.read_csv(conv_path)["best_fitness"].tolist() if conv_path.exists() else []
+                mongo_store.log_genetic_run(
+                    algorithm="genetic_ridge_alpha",
+                    problem="redshift_regression",
+                    dataset="sdss_sample.csv",
+                    seed=42,
+                    params={
+                        "population_size": population_size,
+                        "generations": generations,
+                        "mutation_rate": mutation_rate,
+                        "best_alpha": st.session_state.hp_metrics.get("best_alpha"),
+                    },
+                    metrics={
+                        "best_alpha": st.session_state.hp_metrics.get("best_alpha"),
+                        "mse": st.session_state.hp_metrics.get("mse"),
+                        "r2": st.session_state.hp_metrics.get("r2"),
+                        "rmse": float(st.session_state.hp_metrics.get("mse", 0.0) ** 0.5),
+                    },
+                    evaluations=population_size * generations,
+                    convergence=conv,
+                    time_s=t_hp,
+                    experiment_id="streamlit_dashboard_run",
+                )
+            except Exception:
+                pass
     st.success("Optimización de hiperparámetros finalizada.")
 
     with st.spinner("Ejecutando clustering evolutivo..."):
+        t0 = time.time()
         st.session_state.cluster_metrics = run_clustering_ga(
             df,
             output_dir=OUTPUTS_DIR / "clustering",
@@ -143,7 +210,37 @@ def execute_pipeline(df: pd.DataFrame):
             mutation_rate=mutation_rate,
             generations=generations,
         )
+        t_clust = time.time() - t0
+        if mongo_store:
+            try:
+                conv_path = OUTPUTS_DIR / "clustering" / "convergence.csv"
+                conv = pd.read_csv(conv_path)["best_fitness"].tolist() if conv_path.exists() else []
+                mongo_store.log_genetic_run(
+                    algorithm="genetic_clustering",
+                    problem="sdss_clustering",
+                    dataset="sdss_sample.csv",
+                    seed=42,
+                    params={
+                        "population_size": population_size,
+                        "generations": generations,
+                        "mutation_rate": mutation_rate,
+                        "k_clusters": 3,
+                    },
+                    metrics={
+                        "genetic_sse": st.session_state.cluster_metrics.get("genetic_sse"),
+                        "kmeans_sse": st.session_state.cluster_metrics.get("kmeans_sse"),
+                        "rmse": float(st.session_state.cluster_metrics.get("genetic_sse", 0.0)),
+                    },
+                    evaluations=population_size * generations,
+                    convergence=conv,
+                    time_s=t_clust,
+                    experiment_id="streamlit_dashboard_run",
+                )
+            except Exception:
+                pass
     st.success("Clustering evolutivo finalizado.")
+    if mongo_store:
+        st.info("Corridas registradas en tu clúster de MongoDB Atlas.")
 
     st.session_state.run_pipeline = False
 
@@ -164,6 +261,16 @@ with st.sidebar:
     generations = st.slider("Número de generaciones", 10, 150, GENERATIONS, 10)
     animation_delay = st.slider("Velocidad de animación", 0.03, 0.5, 0.18, 0.01)
     st.session_state.animation_delay = animation_delay
+
+    st.markdown("---")
+    st.subheader("MongoDB Atlas")
+    if mongo_store:
+        st.success("Conectado a Atlas")
+        st.caption(f"Base de datos: `{mongo_store.db_name}`")
+        st.caption(f"Colección: `{mongo_store.collection_name}`")
+    else:
+        st.warning("MongoDB no conectado")
+        st.caption("Verifica el archivo .env")
 
     st.markdown("---")
     if st.button("Ejecutar pipeline completo", type="primary", key="run_full_pipeline"):
@@ -283,3 +390,26 @@ if feature_metrics or hp_metrics or cluster_metrics:
     st.json(summary_payload)
 else:
     st.info("Ejecuta el pipeline para obtener métricas finales.")
+
+if mongo_store:
+    st.markdown("---")
+    st.subheader("Persistencia en MongoDB Atlas")
+    with st.expander("Ver últimas corridas registradas en Atlas", expanded=True):
+        try:
+            recent_runs = mongo_store.get_recent_runs(limit=10)
+            if recent_runs:
+                formatted_runs = []
+                for r in recent_runs:
+                    formatted_runs.append({
+                        "ID": str(r.get("_id"))[-6:],
+                        "Algoritmo": r.get("algorithm"),
+                        "Problema": r.get("problem"),
+                        "Fecha (UTC)": str(r.get("created_at"))[:19],
+                        "Métricas": str(r.get("metrics")),
+                    })
+                st.dataframe(pd.DataFrame(formatted_runs), use_container_width=True)
+            else:
+                st.info("No hay corridas guardadas aún en MongoDB Atlas.")
+        except Exception as e:
+            st.error(f"Error al consultar Atlas: {e}")
+

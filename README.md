@@ -123,6 +123,23 @@ python main.py
 pytest -v
 ```
 
+## Persistencia en MongoDB Atlas
+
+El proyecto permite almacenar todas las corridas, métricas y curvas de convergencia directamente en un clúster de **MongoDB Atlas**.
+
+1. Copia la plantilla de variables de entorno y agrega tu URI de Atlas:
+```powershell
+copy .env.example .env
+```
+
+2. Inicializa los índices y verifica la conexión:
+```powershell
+python scripts/init_mongodb.py --seed-sample
+```
+
+3. Al ejecutar el pipeline (`python main.py`) o el dashboard (`python -m streamlit run app.py`), cada experimento guardará automáticamente sus resultados en la base de datos `biooptimization`, colección `runs`.
+
+
 ## Docker
 
 > Requisito: Docker Desktop debe estar ejecutándose en Windows antes de construir o ejecutar el contenedor.
